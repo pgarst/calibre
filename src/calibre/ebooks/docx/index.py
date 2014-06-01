@@ -91,7 +91,7 @@ def process_index(field, index, xe_fields, log):
 
     xe_fields = get_applicable_xe_fields(index, xe_fields)
     if not xe_fields:
-        return
+        return [], []
     if heading_text is not None:
         groups = partition_by_first_letter(xe_fields, key=itemgetter('text'))
         items = []
@@ -138,7 +138,7 @@ def split_up_block(block, a, text, parts, ldict):
 """
 The merge algorithm is a little tricky.
 We start with a list of elementary blocks. Each is an HtmlElement, a p node
-with a list of child nodes. The last child is a link, and the earlier ones are 
+with a list of child nodes. The last child may be a link, and the earlier ones are
 just text.
 The list is in reverse order from what we want in the index.
 There is a dictionary ldict which records the level of each child node.
@@ -155,11 +155,12 @@ Start with (p, p1) and (n, n1).
 
 Given (p, p1, ..., pk) and (n, n1, ..., nk) which we want to merge:
 
-If there are no more levels in n, then add the link from nk to the links for pk.
+If there are no more levels in n, and we have a link in nk,
+then add the link from nk to the links for pk.
 This might be the first link for pk, or we might get a list of references.
 
 Otherwise nk+1 is the next level in n. Look for a matching entry in p. It must have
-the same text, it must follow pk, it must come before we find any other p entries at 
+the same text, it must follow pk, it must come before we find any other p entries at
 the same level as pk, and it must have the same level as nk+1.
 
 If we find such a matching entry, go back to the start with (p ... pk+1) and (n ... nk+1).
@@ -169,9 +170,11 @@ to insert nk+1 and all following entries from n into p immediately following pk.
 """
 
 def find_match(prev_block, pind, nextent, ldict):
-    curlevel = ldict[prev_block[pind]]
+    curlevel = ldict.get(prev_block[pind], -1)
+    if curlevel < 0:
+        return -1
     for p in range(pind+1, len(prev_block)):
-        trylev = ldict[prev_block[p]]
+        trylev = ldict.get(prev_block[p], -1)
         if trylev <= curlevel:
             return -1
         if trylev > (curlevel+1):
@@ -182,6 +185,9 @@ def find_match(prev_block, pind, nextent, ldict):
 
 def add_link(pent, nent, ldict):
     na = nent.xpath('descendant::a[1]')
+    # If there is no link, leave it as text
+    if not na or len(na) == 0:
+        return
     na = na[0]
     pa = pent.xpath('descendant::a')
     if pa and len(pa) > 0:
@@ -208,7 +214,7 @@ def merge_blocks(prev_block, next_block, pind, nind, next_path, ldict):
     if prevent > 0:
         merge_blocks(prev_block, next_block, prevent, nind, next_path, ldict)
         return
-    
+
     # Want to insert elements into previous block
     while nind < len(next_block):
         # insert takes it out of old

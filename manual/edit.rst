@@ -78,7 +78,7 @@ sum of the individual file sizes.
 Many files have special meaning, in the book. These will typically have
 an icon next to their names, indicating the special meaning. For example, in
 the picture to the left, you can see that the files :guilabel:`cover_image.jpg`
-and :guilabel:`titlepage.xhtml` have the ocon of a cover next to them, this
+and :guilabel:`titlepage.xhtml` have the icon of a cover next to them, this
 indicates they are the book cover image and titlepage. Similarly, the
 :guilabel:`content.opf` file has a metadata icon next to it, indicating the
 book metadata is present in it and the the :guilabel:`toc.ncx` file has a T
@@ -123,7 +123,9 @@ Changing text file order
 
 You can re-arrange the order in which text (HTML) files are opened when reading
 the book by simply dragging and dropping them in the Files browser. For the
-technically inclined, this is called re-ordering the book spine.
+technically inclined, this is called re-ordering the book spine. Note that you
+have to drop the items *between* other items, not on top of them, this can be a
+little fiddly until you get used to it.
 
 Marking the cover
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -384,6 +386,13 @@ broken HTML/CSS. Therefore, if you dont want any auto-fixing to be performed,
 first use the Check Book tool to correct all problems and only then run
 beautify.  Accessed via :guilabel:`Tools->Beautify all files`.
 
+.. note::
+    In HTML any text can have significant whitespace, via the CSS white-space
+    directive. Therefor, beautification could potentially change the rendering
+    of the HTML. To avoid this, as much as possible, the beautify algorithm
+    only beautifies block level tags that contain other block level tags. So,
+    for example, text inside a <p> tag will not have its whitespace changed.
+
 
 Insert inline Table of Contents
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -397,6 +406,27 @@ generated based on the currently defined Table of Contents.
 If you use this tool multiple times, each invocation will cause the previously
 created inline Table of Contents to be replaced. The tool can be accessed via
 :guilabel:`Tools->Table of Contents->Insert inline Table of Contents`.
+
+Set Semantics
+^^^^^^^^^^^^^^^^^
+
+This tool is used to set *semantics* in EPUB files. Semantics are simply,
+links in the OPF file that identify certain locations in the book as having
+special meaning. You can use them to identify the foreword, dedication, cover,
+table of contents, etc. Simply choose the type of semantic information you want
+to specify and then select the location in the book the link should point to.
+This tool can be accessed via :guilabel:`Tools->Set semantics`.
+
+Filter style information
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+This tool can be used to easily remove specified CSS style properties from the
+entire book. You can tell it what properties you want removed, for example,
+``color, background-color, line-height`` and it will remove them from
+everywhere they occur --- stylesheets, ``<style>`` tags and inline ``style``
+attributes. After removing the style information, a summary of all the changes
+made is displayed so you can see exactly what was changed. The tool can be
+accessed via :guilabel:`Tools->Filter style information`.
 
 .. _checkpoints:
 
@@ -485,6 +515,34 @@ heading tags or all tags having a certain class and so on.
     
     <div style="clear:both"></div>
 
+The Live CSS panel
+---------------------
+
+.. image:: images/live_css.png
+    :alt: The Live Preview Panel
+    :class: float-left-img
+
+
+The :guilabel:`Live CSS` panel shows you all the style rules that apply to the
+tag you are currently editing. The name of tag, along with its line number in
+the editor are displayed, followed by a list of matching style rules.
+
+It is a great way to quickly see which style rules apply to any tag. The view
+also has clickable links (in blue), which take you directly to the location
+where the style was defined, in case you wish to make any changes to the style
+rules. Style rules that apply directly to the tag, as well as rules that are
+inherited from parent tags are shown.
+
+The panel also shows you what the finally calculated styles for the tag are.
+Properties in the list that are superseded by higher priority rules are shown
+with a line through them.
+
+You can enable the Live CSS panel via :guilabel:`View->Live CSS`.
+
+.. raw:: html epub
+    
+    <div style="clear:both"></div>
+
 Miscellaneous Tools
 ----------------------
 
@@ -549,7 +607,7 @@ Adding new dictionaries
 ###########################
 
 The spelling checker comes with builtin dictionaries for the English and
-Spansih languages. You can install your own dictionaries via
+Spanish languages. You can install your own dictionaries via
 :guilabel:`Preferences->Editor->Manage spelling dictionaries`. The spell
 checker can use dictionaries from the OpenOffice program (in the .oxt
 format). You can download these dictionaries from

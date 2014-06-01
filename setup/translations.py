@@ -6,35 +6,33 @@ __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, tempfile, shutil, subprocess, glob, re, time, textwrap, cPickle
+import os, tempfile, shutil, subprocess, glob, re, time, textwrap, cPickle, shlex
 from locale import normalize as normalize_locale
 from functools import partial
 
 from setup import Command, __appname__, __version__, require_git_master
 
 def qt_sources():
-    qtdir = glob.glob('/usr/src/qt-*')[-1]
+    # QT5XX: Change this
+    qtdir = '/usr/src/qt4'
     j = partial(os.path.join, qtdir)
     return list(map(j, [
-            'src/gui/widgets/qdialogbuttonbox.cpp',
+            'gui/widgets/qdialogbuttonbox.cpp',
     ]))
 
 class POT(Command):  # {{{
 
     description = 'Update the .pot translation template and upload it'
-    LP_BASE = os.path.join(os.path.dirname(Command.SRC))
-    if not os.path.exists(os.path.join(LP_BASE, 'setup', 'iso_639')):
-        # We are in a git checkout, translations are assumed to be in a
-        # directory called calibre-translations at the same level as the
-        # calibre directory.
-        LP_BASE = os.path.join(os.path.dirname(os.path.dirname(Command.SRC)), 'calibre-translations')
-    LP_SRC = os.path.join(LP_BASE, 'src')
-    LP_PATH = os.path.join(LP_SRC, os.path.join(__appname__, 'translations'))
-    LP_ISO_PATH = os.path.join(LP_BASE, 'setup', 'iso_639')
+    TRANSLATIONS = os.path.join(os.path.dirname(Command.SRC), 'translations')
+
+    def tx(self, cmd, **kw):
+        kw['cwd'] = kw.get('cwd', self.TRANSLATIONS)
+        if hasattr(cmd, 'format'):
+            cmd = shlex.split(cmd)
+        return subprocess.check_call(['tx'] + cmd, **kw)
 
     def upload_pot(self, pot):
-        msg = 'Updated translations template'
-        subprocess.check_call(['bzr', 'commit', '-m', msg, pot])
+        self.tx('push -r calibre.main -s', cwd=self.TRANSLATIONS)
 
     def source_files(self):
         ans = []
@@ -125,7 +123,10 @@ class POT(Command):  # {{{
             os.remove(out.name)
             src = pot_header + '\n' + src
             src += '\n\n' + self.get_tweaks_docs()
-            pot = os.path.join(self.LP_PATH, __appname__+'.pot')
+            bdir = os.path.join(self.TRANSLATIONS, __appname__)
+            if not os.path.exists(bdir):
+                os.makedirs(bdir)
+            pot = os.path.join(bdir, 'main.pot')
             # Workaround for bug in xgettext:
             # https://savannah.gnu.org/bugs/index.php?41668
             src = re.sub(r'#, python-brace-format\s+msgid ""\s+.*<code>{0:</code>',
@@ -144,7 +145,7 @@ class Translations(POT):  # {{{
             'locales')
 
     def po_files(self):
-        return glob.glob(os.path.join(self.LP_PATH, '*.po'))
+        return glob.glob(os.path.join(self.TRANSLATIONS, __appname__, '*.po'))
 
     def mo_file(self, po_file):
         locale = os.path.splitext(os.path.basename(po_file))[0]
@@ -152,7 +153,8 @@ class Translations(POT):  # {{{
 
     def run(self, opts):
         l = {}
-        execfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lc_data.py'), l, l)
+        exec(compile(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lc_data.py'))
+             .read(), os.path.join(os.path.dirname(os.path.abspath(__file__)), 'lc_data.py'), 'exec'), l, l)
         lcdata = {k:{k1:v1 for k1, v1 in v} for k, v in l['data']}
         self.iso639_errors = []
         for f in self.po_files():
@@ -163,7 +165,7 @@ class Translations(POT):  # {{{
             self.info('\tCompiling translations for', locale)
             subprocess.check_call(['msgfmt', '-o', dest, f])
             iscpo = {'bn':'bn_IN', 'zh_HK':'zh_CN'}.get(locale, locale)
-            iso639 = self.j(self.LP_ISO_PATH, '%s.po'%iscpo)
+            iso639 = self.j(self.TRANSLATIONS, 'iso_639', '%s.po'%iscpo)
 
             if os.path.exists(iso639):
                 self.check_iso639(iso639)
@@ -174,7 +176,7 @@ class Translations(POT):  # {{{
             elif locale not in {
                 'en_GB', 'en_CA', 'en_AU', 'si', 'ur', 'sc', 'ltg', 'nds',
                 'te', 'yi', 'fo', 'sq', 'ast', 'ml', 'ku', 'fr_CA', 'him',
-                'jv', 'ka', 'fur', 'ber', 'my', 'fil'}:
+                'jv', 'ka', 'fur', 'ber', 'my', 'fil', 'hy', 'ug'}:
                 self.warn('No ISO 639 translations for locale:', locale)
 
             ln = normalize_locale(locale).partition('.')[0]
@@ -238,7 +240,7 @@ class Translations(POT):  # {{{
         if not self.newer(dest, files):
             return
         self.info('Calculating translation statistics...')
-        raw = self.get_stats(self.j(self.LP_PATH, 'calibre.pot'))
+        raw = self.get_stats(self.j(self.TRANSLATIONS, __appname__, 'main.pot'))
         total = int(raw.split(',')[-1].strip().split()[0])
         stats = {}
         for f in files:
@@ -261,61 +263,37 @@ class Translations(POT):  # {{{
 
 class GetTranslations(Translations):  # {{{
 
-    description = 'Get updated translations from Launchpad'
-    BRANCH = 'lp:~kovid/calibre/translations'
-    LP_BASE = os.path.dirname(POT.LP_SRC)
-    CMSG = 'Updated translations'
+    description = 'Get updated translations from Transifex'
 
     @property
-    def modified_translations(self):
-        raw = subprocess.check_output(['bzr', 'status', '-S', self.LP_PATH]).strip()
-        ans = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if line.startswith('M') and line.endswith('.po'):
-                ans.append(line.split()[-1])
-        return ans
-
-    def resolve_conflicts(self):
-        conflict = False
-        for line in subprocess.check_output(['bzr', 'status'], cwd=self.LP_BASE).splitlines():
-            if line == 'conflicts:':
-                conflict = True
-                break
-        if not conflict:
-            raise Exception('bzr merge failed and no conflicts found')
-        subprocess.check_call(['bzr', 'resolve', '--take-other'], cwd=self.LP_BASE)
+    def is_modified(self):
+        return bool(subprocess.check_output('git status --porcelain'.split(), cwd=self.TRANSLATIONS))
 
     def run(self, opts):
         require_git_master()
-        if not self.modified_translations:
-            try:
-                subprocess.check_call(['bzr', 'merge', self.BRANCH], cwd=self.LP_BASE)
-            except subprocess.CalledProcessError:
-                self.resolve_conflicts()
-        self.check_for_errors()
-
-        if self.modified_translations:
-            subprocess.check_call(['bzr', 'commit', '-m',
-                self.CMSG], cwd=self.LP_BASE)
+        self.tx('pull -a')
+        if self.is_modified:
+            self.check_for_errors()
+            self.upload_to_vcs()
         else:
-            print('No updated translations available')
+            print ('No translations were updated')
 
     def check_for_errors(self):
         errors = os.path.join(tempfile.gettempdir(), 'calibre-translation-errors')
         if os.path.exists(errors):
             shutil.rmtree(errors)
         os.mkdir(errors)
-        pofilter = ('pofilter', '-i', self.LP_PATH, '-o', errors,
+        tpath = self.j(self.TRANSLATIONS, __appname__)
+        pofilter = ('pofilter', '-i', tpath, '-o', errors,
                 '-t', 'accelerators', '-t', 'escapes', '-t', 'variables',
-                #'-t', 'xmltags',
-                #'-t', 'brackets',
-                #'-t', 'emails',
-                #'-t', 'doublequoting',
-                #'-t', 'filepaths',
-                #'-t', 'numbers',
+                # '-t', 'xmltags',
+                # '-t', 'brackets',
+                # '-t', 'emails',
+                # '-t', 'doublequoting',
+                # '-t', 'filepaths',
+                # '-t', 'numbers',
                 '-t', 'options',
-                #'-t', 'urls',
+                # '-t', 'urls',
                 '-t', 'printf')
         subprocess.check_call(pofilter)
         errfiles = glob.glob(errors+os.sep+'*.po')
@@ -329,10 +307,23 @@ class GetTranslations(Translations):  # {{{
                     f.truncate()
                     f.write(raw)
 
-            subprocess.check_call(['pomerge', '-t', self.LP_PATH, '-i', errors, '-o',
-                self.LP_PATH])
+            subprocess.check_call(['pomerge', '-t', tpath, '-i', errors, '-o', tpath])
+            languages = []
+            for f in glob.glob(self.j(errors, '*.po')):
+                lc = os.path.basename(f).rpartition('.')[0]
+                languages.append(lc)
+            if languages:
+                print('Pushing fixes for languages: %s', ', '.join(languages))
+                self.tx('push -r calibre.main -t -l ' + ','.join(languages))
             return True
         return False
+
+    def upload_to_vcs(self):
+        print ('Uploading updated translations to version control')
+        cc = partial(subprocess.check_call, cwd=self.TRANSLATIONS)
+        cc('git add */*.po'.split())
+        cc('git commit -am'.split() + ['Updated translations'])
+        cc('git push'.split())
 
 # }}}
 

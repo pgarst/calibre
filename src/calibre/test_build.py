@@ -69,6 +69,12 @@ def test_sqlite():
         raise RuntimeError('Failed to load sqlite extension')
     print ('sqlite OK!')
 
+def test_apsw():
+    import apsw
+    conn = apsw.Connection(':memory:')
+    conn.close()
+    print ('apsw OK!')
+
 def test_qt():
     from PyQt4.Qt import (QDialog, QImageReader, QNetworkAccessManager)
     from PyQt4.QtWebKit import QWebView
@@ -133,6 +139,7 @@ def test_woff():
     print ('WOFF ok!')
 
 def test_magick():
+    print ('Testing tinycss tokenizer')
     from calibre.utils.magick import create_canvas
     i = create_canvas(100, 100)
     from calibre.gui2.tweak_book.editor.canvas import qimage_to_magick, magick_to_qimage
@@ -140,11 +147,20 @@ def test_magick():
     i = qimage_to_magick(img)
     print ('magick OK!')
 
+def test_tokenizer():
+    from tinycss.tokenizer import c_tokenize_flat
+    if c_tokenize_flat is None:
+        raise ValueError('tinycss C tokenizer not loaded')
+    from tinycss.tests.main import run_tests
+    run_tests(for_build=True)
+    print('tinycss tokenizer OK!')
+
 def test():
     test_plugins()
     test_lxml()
     test_ssl()
     test_sqlite()
+    test_apsw()
     test_imaging()
     test_unrar()
     test_icu()
@@ -153,6 +169,7 @@ def test():
     test_html5lib()
     test_regex()
     test_magick()
+    test_tokenizer()
     if iswindows:
         test_winutil()
         test_wpd()

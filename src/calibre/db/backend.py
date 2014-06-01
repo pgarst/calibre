@@ -27,7 +27,8 @@ from calibre.utils.icu import sort_key
 from calibre.utils.config import to_json, from_json, prefs, tweaks
 from calibre.utils.date import utcfromtimestamp, parse_date
 from calibre.utils.filenames import (
-    is_case_sensitive, samefile, hardlink_file, ascii_filename, WindowsAtomicFolderMove, atomic_rename)
+    is_case_sensitive, samefile, hardlink_file, ascii_filename,
+    WindowsAtomicFolderMove, atomic_rename, remove_dir_if_empty)
 from calibre.utils.magick.draw import save_cover_data_to
 from calibre.utils.formatter_functions import load_user_template_functions
 from calibre.db.tables import (OneToOneTable, ManyToOneTable, ManyToManyTable,
@@ -1110,8 +1111,11 @@ class DB(object):
         l = self.PATH_LIMIT - (len(book_id) // 2) - 2
         author = ascii_filename(author)[:l].decode('ascii', 'replace')
         title  = ascii_filename(title)[:l].decode('ascii', 'replace')
-        while author[-1] in (' ', '.'):
-            author = author[:-1]
+        try:
+            while author[-1] in (' ', '.'):
+                author = author[:-1]
+        except IndexError:
+            author = ''
         if not author:
             author = ascii_filename(_('Unknown')).decode(
                     'ascii', 'replace')
@@ -1134,6 +1138,8 @@ class DB(object):
         name   = title + ' - ' + author
         while name.endswith('.'):
             name = name[:-1]
+        if not name:
+            name = ascii_filename(_('Unknown')).decode('ascii', 'replace')
         return name
 
     # Database layer API {{{
@@ -1184,8 +1190,7 @@ class DB(object):
         Read all data from the db into the python in-memory tables
         '''
 
-        with self.conn:  # Use a single transaction, to ensure nothing modifies
-                         # the db while we are reading
+        with self.conn:  # Use a single transaction, to ensure nothing modifies the db while we are reading
             for table in self.tables.itervalues():
                 try:
                     table.read(self)
@@ -1538,11 +1543,7 @@ class DB(object):
         if permanent:
             for path in paths:
                 self.rmtree(path)
-                try:
-                    os.rmdir(os.path.dirname(path))
-                except OSError as e:
-                    if e.errno != errno.ENOTEMPTY:
-                        raise
+                remove_dir_if_empty(os.path.dirname(path), ignore_metadata_caches=True)
         else:
             delete_service().delete_books(paths, self.library_path)
 
@@ -1666,6 +1667,4 @@ class DB(object):
         self.execute('UPDATE books SET path=? WHERE id=?', (path.replace(os.sep, '/'), book_id))
         vals = [(book_id, fmt, size, name) for fmt, size, name in formats]
         self.executemany('INSERT INTO data (book,format,uncompressed_size,name) VALUES (?,?,?,?)', vals)
-   # }}}
-
-
+    # }}}

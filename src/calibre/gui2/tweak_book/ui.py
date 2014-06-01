@@ -33,6 +33,7 @@ from calibre.gui2.tweak_book.spell import SpellCheck
 from calibre.gui2.tweak_book.search import SavedSearches
 from calibre.gui2.tweak_book.toc import TOCViewer
 from calibre.gui2.tweak_book.char_select import CharSelect
+from calibre.gui2.tweak_book.live_css import LiveCSS
 from calibre.gui2.tweak_book.editor.widget import register_text_editor_actions
 from calibre.gui2.tweak_book.editor.insert_resource import InsertImage
 from calibre.utils.icu import character_name
@@ -260,6 +261,7 @@ class Main(MainWindow):
             area = getattr(Qt, '%sDockWidgetArea' % capitalize({'vertical':h, 'horizontal':v}[pref]))
             self.setCorner(getattr(Qt, '%s%sCorner' % tuple(map(capitalize, (v, h)))), area)
         self.preview.apply_settings()
+        self.live_css.apply_theme()
 
     def show_status_message(self, msg, timeout=5):
         self.status_bar.showMessage(msg, int(timeout*1000))
@@ -349,6 +351,8 @@ class Main(MainWindow):
                                       _('Arrange into folders'))
         self.action_set_semantics = reg('tags.png', _('Set &Semantics'), self.boss.set_semantics, 'set-semantics', (),
                                         _('Set Semantics'))
+        self.action_filter_css = reg('filter.png', _('&Filter style information'), self.boss.filter_css, 'filter-css', (),
+                                     _('Filter style information'))
 
         # Polish actions
         group = _('Polish Book')
@@ -408,6 +412,8 @@ class Main(MainWindow):
             self.check_book.next_error, delta=1), 'check-book-next', ('Ctrl+F7'), _('Show next error'))
         self.action_check_book_previous = reg('back.png', _('&Previous error'), partial(
             self.check_book.next_error, delta=-1), 'check-book-previous', ('Ctrl+Shift+F7'), _('Show previous error'))
+        self.action_spell_check_next = reg('forward.png', _('&Next spelling mistake'),
+            self.boss.next_spell_error, 'spell-next', ('F8'), _('Go to next spelling mistake'))
 
         # Miscellaneous actions
         group = _('Miscellaneous')
@@ -482,6 +488,7 @@ class Main(MainWindow):
         e.addAction(self.action_pretty_all)
         e.addAction(self.action_rationalize_folders)
         e.addAction(self.action_set_semantics)
+        e.addAction(self.action_filter_css)
         e.addAction(self.action_spell_check_book)
         e.addAction(self.action_check_book)
 
@@ -590,6 +597,13 @@ class Main(MainWindow):
         d.setWidget(self.preview)
         self.addDockWidget(Qt.RightDockWidgetArea, d)
 
+        d = create(_('Live CSS'), 'live-css')
+        d.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
+        self.live_css = LiveCSS(self.preview, parent=d)
+        d.setWidget(self.live_css)
+        self.addDockWidget(Qt.RightDockWidgetArea, d)
+        d.close()  # Hidden by default
+
         d = create(_('Check Book'), 'check-book')
         d.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)
         d.setWidget(self.check_book)
@@ -609,7 +623,6 @@ class Main(MainWindow):
         d.setWidget(self.toc_view)
         self.addDockWidget(Qt.LeftDockWidgetArea, d)
         d.close()  # Hidden by default
-        d.visibilityChanged.connect(self.toc_view.visibility_changed)
 
         d = create(_('Checkpoints'), 'checkpoints')
         d.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea | Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea)

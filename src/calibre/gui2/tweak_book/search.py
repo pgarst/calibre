@@ -84,6 +84,11 @@ class WhereBox(QComboBox):
             <dd>Search only within the marked text in the currently opened file. You can mark text using the Search menu.</dd>
             </dl>'''))
         self.emphasize = emphasize
+        self.ofont = QFont(self.font())
+        if emphasize:
+            f = self.emph_font = QFont(self.ofont)
+            f.setBold(True), f.setItalic(True)
+            self.setFont(f)
 
     @dynamic_property
     def where(self):
@@ -94,16 +99,16 @@ class WhereBox(QComboBox):
             self.setCurrentIndex({v:k for k, v in wm.iteritems()}[val])
         return property(fget=fget, fset=fset)
 
-    def paintEvent(self, ev):
+    def showPopup(self):
         # We do it like this so that the popup uses a normal font
         if self.emphasize:
-            ofont = self.font()
-            f = QFont(ofont)
-            f.setBold(True), f.setItalic(True)
-            self.setFont(f)
-        QComboBox.paintEvent(self, ev)
+            self.setFont(self.ofont)
+        QComboBox.showPopup(self)
+
+    def hidePopup(self):
         if self.emphasize:
-            self.setFont(ofont)
+            self.setFont(self.emph_font)
+        QComboBox.hidePopup(self)
 
 class DirectionBox(QComboBox):
 
@@ -766,7 +771,7 @@ class SavedSearches(Dialog):
             def err():
                 error_dialog(self, _('Invalid data'), _(
                     'The file %s does not contain valid saved searches') % path, show=True)
-            if not isinstance(obj, dict) or not 'version' in obj or not 'searches' in obj or obj['version'] not in (1,):
+            if not isinstance(obj, dict) or 'version' not in obj or 'searches' not in obj or obj['version'] not in (1,):
                 return err()
             searches = []
             for item in obj['searches']:
@@ -824,6 +829,12 @@ def validate_search_request(name, searchable_names, has_marked_text, state, gui_
         return False
     return True
 
+class InvalidRegex(regex.error):
+
+    def __init__(self, raw, e):
+        regex.error.__init__(self, e.message)
+        self.regex = raw
+
 def get_search_regex(state):
     raw = state['find']
     if state['mode'] != 'regex':
@@ -837,7 +848,11 @@ def get_search_regex(state):
         flags |= regex.REVERSE
     ans = regex_cache.get((flags, raw), None)
     if ans is None:
-        ans = regex_cache[(flags, raw)] = regex.compile(raw, flags=flags)
+        try:
+            ans = regex_cache[(flags, raw)] = regex.compile(raw, flags=flags)
+        except regex.error as e:
+            raise InvalidRegex(raw, e)
+
     return ans
 
 def initialize_search_request(state, action, current_editor, current_editor_name, searchable_names):
@@ -889,7 +904,12 @@ def run_search(
     if len(searches) > 1:
         errfind = _('the selected searches')
 
-    searches = [(get_search_regex(search), search['replace']) for search in searches]
+    try:
+        searches = [(get_search_regex(search), search['replace']) for search in searches]
+    except InvalidRegex as e:
+        return error_dialog(gui_parent, _('Invalid regex'), '<p>' + _(
+            'The regular expression you entered is invalid: <pre>{0}</pre>With error: {1}').format(
+                prepare_string_for_xml(e.regex), e.message), show=True)
 
     def no_match():
         QApplication.restoreOverrideCursor()

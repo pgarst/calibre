@@ -20,3 +20,11 @@ class NullSmarts(object):
     def verify_for_spellcheck(self, cursor, highlighter):
         return False
 
+    def cursor_position_with_sourceline(self, cursor):
+        return None, None
+
+    def goto_sourceline(self, editor, sourceline, tags, attribute=None):
+        return False
+
+    def get_inner_HTML(self, editor):
+        return None

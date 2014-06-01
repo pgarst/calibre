@@ -27,7 +27,7 @@ from calibre.gui2.viewer.table_popup import TablePopup
 from calibre.gui2.viewer.inspector import WebInspector
 from calibre.gui2.viewer.gestures import GestureHandler
 from calibre.ebooks.oeb.display.webview import load_html
-from calibre.constants import isxp, iswindows
+from calibre.constants import isxp, iswindows, DEBUG
 # }}}
 
 def apply_settings(settings, opts):
@@ -364,13 +364,11 @@ class Document(QWebPage):  # {{{
         return ans
 
     def javaScriptConsoleMessage(self, msg, lineno, msgid):
-        if self.debug_javascript:
+        if DEBUG:
             prints(msg)
-        else:
-            return QWebPage.javaScriptConsoleMessage(self, msg, lineno, msgid)
 
     def javaScriptAlert(self, frame, msg):
-        if self.debug_javascript:
+        if DEBUG:
             prints(msg)
         else:
             return QWebPage.javaScriptAlert(self, frame, msg)
@@ -681,6 +679,12 @@ class DocumentView(QWebView):  # {{{
                 ac = getattr(self, '%s_action' % x)
                 menu.addAction(ac.icon(), '%s [%s]' % (unicode(ac.text()), ','.join(self.shortcuts.get_shortcuts(sc))), ac.trigger)
 
+        if from_touch and self.manager is not None:
+            word = unicode(mf.evaluateJavaScript('window.calibre_utils.word_at_point(%f, %f)' % (ev.pos().x(), ev.pos().y())).toString())
+            if word:
+                menu.addAction(self.dictionary_action.icon(), _('Lookup %s in the dictionary') % word, partial(self.manager.lookup, word))
+                menu.addAction(self.search_online_action.icon(), _('Search for %s online') % word, partial(self.do_search_online, word))
+
         if not text and img.isNull():
             menu.addSeparator()
             if self.manager.action_back.isEnabled():
@@ -748,8 +752,11 @@ class DocumentView(QWebView):  # {{{
     def search_online(self):
         t = unicode(self.selectedText()).strip()
         if t:
-            url = 'https://www.google.com/search?q=' + QUrl().toPercentEncoding(t)
-            open_url(QUrl.fromEncoded(url))
+            self.do_search_online(t)
+
+    def do_search_online(self, text):
+        url = 'https://www.google.com/search?q=' + QUrl().toPercentEncoding(text)
+        open_url(QUrl.fromEncoded(url))
 
     def set_manager(self, manager):
         self.manager = manager

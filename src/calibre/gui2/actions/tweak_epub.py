@@ -54,7 +54,7 @@ class Choose(QDialog):
 class TweakEpubAction(InterfaceAction):
 
     name = 'Tweak ePub'
-    action_spec = (_('Edit Book'), 'tweak.png', _('Edit eBooks'), _('T'))
+    action_spec = (_('Edit book'), 'tweak.png', _('Edit books in the EPUB or AZW formats'), _('T'))
     dont_add_to = frozenset(['context-menu-device'])
     action_type = 'current'
 
@@ -135,8 +135,9 @@ class TweakEpubAction(InterfaceAction):
         if tprefs['update_metadata_from_calibre']:
             from calibre.ebooks.metadata.opf2 import pretty_print
             from calibre.ebooks.metadata.meta import set_metadata
+            from calibre.customize.ui import apply_null_metadata
             mi = db.new_api.get_metadata(book_id, get_cover=True)
-            with pretty_print, open(path, 'r+b') as f:
+            with pretty_print, apply_null_metadata, open(path, 'r+b') as f:
                 set_metadata(f, mi, stream_type=fmt.lower())
         notify = '%d:%s:%s:%s' % (book_id, fmt, db.library_id, db.library_path)
         try:

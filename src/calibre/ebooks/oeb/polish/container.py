@@ -171,6 +171,22 @@ class Container(object):  # {{{
             ans = 'application/xhtml+xml'
         return ans
 
+    def add_name_to_manifest(self, name):
+        all_ids = {x.get('id') for x in self.opf_xpath('//*[@id]')}
+        c = 0
+        item_id = 'id'
+        while item_id in all_ids:
+            c += 1
+            item_id = 'id' + '%d'%c
+        manifest = self.opf_xpath('//opf:manifest')[0]
+        href = self.name_to_href(name, self.opf_name)
+        item = manifest.makeelement(OPF('item'),
+                                    id=item_id, href=href)
+        item.set('media-type', self.mime_map[name])
+        self.insert_into_xml(manifest, item)
+        self.dirty(self.opf_name)
+        return item_id
+
     def add_file(self, name, data, media_type=None, spine_index=None):
         ''' Add a file to this container. Entries for the file are
         automatically created in the OPF manifest and spine
@@ -194,19 +210,9 @@ class Container(object):  # {{{
         self.mime_map[name] = mt
         if self.ok_to_be_unmanifested(name):
             return
-        all_ids = {x.get('id') for x in self.opf_xpath('//*[@id]')}
-        c = 0
-        item_id = 'id'
-        while item_id in all_ids:
-            c += 1
-            item_id = 'id' + '%d'%c
-        manifest = self.opf_xpath('//opf:manifest')[0]
-        item = manifest.makeelement(OPF('item'),
-                                    id=item_id, href=href)
-        item.set('media-type', mt)
-        self.insert_into_xml(manifest, item)
-        self.dirty(self.opf_name)
+        item_id = self.add_name_to_manifest(name)
         if mt in OEB_DOCS:
+            manifest = self.opf_xpath('//opf:manifest')[0]
             spine = self.opf_xpath('//opf:spine')[0]
             si = manifest.makeelement(OPF('itemref'), idref=item_id)
             self.insert_into_xml(spine, si, index=spine_index)
@@ -310,8 +316,8 @@ class Container(object):  # {{{
             for elem in self.parsed(name).xpath('//*[@src]'):
                 yield (elem.get('src'), elem.sourceline, 0) if get_line_numbers else elem.get('src')
 
-    def abspath_to_name(self, fullpath):
-        return self.relpath(os.path.abspath(fullpath)).replace(os.sep, '/')
+    def abspath_to_name(self, fullpath, root=None):
+        return self.relpath(os.path.abspath(fullpath), base=root).replace(os.sep, '/')
 
     def name_to_abspath(self, name):
         return os.path.abspath(join(self.root, *name.split('/')))
@@ -1022,20 +1028,9 @@ def do_explode(path, dest):
         mr = MobiReader(stream, default_log, None, None)
 
         with CurrentDir(dest):
-            mr = Mobi8Reader(mr, default_log)
+            mr = Mobi8Reader(mr, default_log, for_tweak=True)
             opf = os.path.abspath(mr())
             obfuscated_fonts = mr.encrypted_fonts
-            # If there are no images then the azw3 input plugin dumps all
-            # binary records as .unknown images, remove them
-            if os.path.exists('images') and os.path.isdir('images'):
-                files = os.listdir('images')
-                unknown = [x for x in files if x.endswith('.unknown')]
-                if len(files) == len(unknown):
-                    [os.remove('images/'+f) for f in files]
-            try:
-                os.remove('debug-raw.html')
-            except:
-                pass
 
     return opf, obfuscated_fonts
 

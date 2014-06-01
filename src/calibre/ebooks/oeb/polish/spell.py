@@ -128,11 +128,17 @@ def read_words_from_html_tag(tag, words, file_name, parent_locale, locale):
 
 def locale_from_tag(tag):
     if 'lang' in tag.attrib:
-        loc = parse_lang_code(tag.get('lang'))
+        try:
+            loc = parse_lang_code(tag.get('lang'))
+        except ValueError:
+            loc = None
         if loc is not None:
             return loc
     if '{http://www.w3.org/XML/1998/namespace}lang' in tag.attrib:
-        loc = parse_lang_code(tag.get('{http://www.w3.org/XML/1998/namespace}lang'))
+        try:
+            loc = parse_lang_code(tag.get('{http://www.w3.org/XML/1998/namespace}lang'))
+        except ValueError:
+            loc = None
         if loc is not None:
             return loc
 
@@ -151,12 +157,16 @@ def group_sort(locations):
             order[loc.file_name] = len(order)
     return sorted(locations, key=lambda l:(order[l.file_name], l.sourceline))
 
-def get_all_words(container, book_locale):
-    words = defaultdict(list)
+def get_checkable_file_names(container):
     file_names = [name for name, linear in container.spine_names] + [container.opf_name]
     toc = find_existing_toc(container)
     if toc is not None and container.exists(toc):
         file_names.append(toc)
+    return file_names, toc
+
+def get_all_words(container, book_locale):
+    words = defaultdict(list)
+    file_names, toc = get_checkable_file_names(container)
     for file_name in file_names:
         if not container.exists(file_name):
             continue

@@ -101,7 +101,10 @@ def custom_dictionaries(reread=False):
     return _custom
 
 default_en_locale = 'en-US'
-ul = parse_lang_code(get_system_locale() or 'en-US')
+try:
+    ul = parse_lang_code(get_system_locale() or 'en-US')
+except ValueError:
+    ul = None
 if ul is not None and ul.langcode == 'eng' and ul.countrycode in 'GB BS BZ GH IE IN JM NZ TT'.split():
     default_en_locale = 'en-' + ul.countrycode
 default_preferred_locales = {'eng':default_en_locale, 'deu':'de-DE', 'spa':'es-ES', 'fra':'fr-FR'}
@@ -255,7 +258,10 @@ class Dictionaries(object):
             ud.words.add((word, locale.langcode))
         if len(ud.words) > wl:
             self.save_user_dictionaries()
-            self.word_cache.pop((word, locale), None)
+            try:
+                self.word_cache.pop((word, locale), None)
+            except TypeError:
+                pass  # word is a set, ignore
             return True
         return False
 
@@ -342,6 +348,8 @@ class Dictionaries(object):
                             ans = d.obj.recognized(word)
                         except ValueError:
                             pass
+                    else:
+                        ans = True
             self.word_cache[key] = ans
         return ans
 

@@ -28,7 +28,7 @@ from calibre.ebooks.oeb.polish.container import OEB_FONTS
 from calibre.ebooks.oeb.polish.parsing import parse
 from calibre.ebooks.oeb.base import serialize, OEB_DOCS
 from calibre.ptempfile import PersistentTemporaryDirectory
-from calibre.gui2 import error_dialog
+from calibre.gui2 import error_dialog, open_url
 from calibre.gui2.tweak_book import current_container, editors, tprefs, actions, TOP
 from calibre.gui2.viewer.documentview import apply_settings
 from calibre.gui2.viewer.config import config
@@ -238,6 +238,7 @@ class NetworkAccessManager(QNetworkAccessManager):
 
     def __init__(self, *args):
         QNetworkAccessManager.__init__(self, *args)
+        self.current_root = None
         self.cache = QNetworkDiskCache(self)
         self.setCache(self.cache)
         self.cache.setCacheDirectory(PersistentTemporaryDirectory(prefix='disk_cache_'))
@@ -251,7 +252,7 @@ class NetworkAccessManager(QNetworkAccessManager):
                 path = path[1:]
             c = current_container()
             try:
-                name = c.abspath_to_name(path)
+                name = c.abspath_to_name(path, root=self.current_root)
             except ValueError:  # Happens on windows with absolute paths on different drives
                 name = None
             if c.has_name(name):
@@ -306,6 +307,14 @@ class WebPage(QWebPage):
         self.mainFrame().javaScriptWindowObjectCleared.connect(self.init_javascript)
         self.init_javascript()
 
+    @dynamic_property
+    def current_root(self):
+        def fget(self):
+            return self.networkAccessManager().current_root
+        def fset(self, val):
+            self.networkAccessManager().current_root = val
+        return property(fget=fget, fset=fset)
+
     def javaScriptConsoleMessage(self, msg, lineno, source_id):
         prints('preview js:%s:%s:'%(unicode(source_id), lineno), unicode(msg))
 
@@ -313,6 +322,7 @@ class WebPage(QWebPage):
         if not hasattr(self, 'js'):
             from calibre.utils.resources import compiled_coffeescript
             self.js = compiled_coffeescript('ebooks.oeb.display.utils', dynamic=False)
+            self.js += P('csscolorparser.js', data=True, allow_user_override=False)
             self.js += compiled_coffeescript('ebooks.oeb.polish.preview', dynamic=False)
         self._line_numbers = None
         mf = self.mainFrame()
@@ -320,9 +330,9 @@ class WebPage(QWebPage):
         mf.evaluateJavaScript(self.js)
 
     @pyqtSlot(str, str, str)
-    def request_sync(self, tag_name, href, lnum):
+    def request_sync(self, tag_name, href, sourceline_address):
         try:
-            self.sync_requested.emit(unicode(tag_name), unicode(href), int(unicode(lnum)))
+            self.sync_requested.emit(unicode(tag_name), unicode(href), json.loads(unicode(sourceline_address)))
         except (TypeError, ValueError, OverflowError, AttributeError):
             pass
 
@@ -358,6 +368,14 @@ class WebPage(QWebPage):
             return
         self.mainFrame().evaluateJavaScript(
             'window.calibre_preview_integration.go_to_line(%d)' % lnum)
+
+    def go_to_sourceline_address(self, sourceline_address):
+        lnum, tags = sourceline_address
+        if lnum is None:
+            return
+        tags = [x.lower() for x in tags]
+        self.mainFrame().evaluateJavaScript(
+            'window.calibre_preview_integration.go_to_sourceline_address(%d, %s)' % (lnum, json.dumps(tags)))
 
     def split_mode(self, enabled):
         self.mainFrame().evaluateJavaScript(
@@ -408,6 +426,11 @@ class WebView(QWebView):
             page margins and embedded fonts that use font name aliasing.
 
             '''))
+        self.page().current_root = None
+
+    def setUrl(self, qurl):
+        self.page().current_root = current_container().root
+        return QWebView.setUrl(self, qurl)
 
     def inspect(self):
         self.inspector.parent().show()
@@ -416,11 +439,17 @@ class WebView(QWebView):
 
     def contextMenuEvent(self, ev):
         menu = QMenu(self)
+        p = self.page()
+        mf = p.mainFrame()
+        r = mf.hitTestContent(ev.pos())
+        url = unicode(r.linkUrl().toString(QUrl.None)).strip()
         ca = self.pageAction(QWebPage.Copy)
         if ca.isEnabled():
             menu.addAction(ca)
         menu.addAction(actions['reload-preview'])
         menu.addAction(QIcon(I('debug.png')), _('Inspect element'), self.inspect)
+        if url.partition(':')[0].lower() in {'http', 'https'}:
+            menu.addAction(_('Open link'), partial(open_url, r.linkUrl()))
         menu.exec_(ev.globalPos())
 
 class Preview(QWidget):
@@ -429,6 +458,8 @@ class Preview(QWidget):
     split_requested = pyqtSignal(object, object, object)
     split_start_requested = pyqtSignal()
     link_clicked = pyqtSignal(object, object)
+    refresh_starting = pyqtSignal()
+    refreshed = pyqtSignal()
 
     def __init__(self, parent=None):
         QWidget.__init__(self, parent)
@@ -515,8 +546,8 @@ class Preview(QWidget):
         if self.current_name:
             self.split_requested.emit(self.current_name, loc, totals)
 
-    def sync_to_editor(self, name, lnum):
-        self.current_sync_request = (name, lnum)
+    def sync_to_editor(self, name, sourceline_address):
+        self.current_sync_request = (name, sourceline_address)
         QTimer.singleShot(100, self._sync_to_editor)
 
     def _sync_to_editor(self):
@@ -527,9 +558,9 @@ class Preview(QWidget):
                 return QTimer.singleShot(100, self._sync_to_editor)
         except TypeError:
             return  # Happens if current_sync_request is None
-        lnum = self.current_sync_request[1]
+        sourceline_address = self.current_sync_request[1]
         self.current_sync_request = None
-        self.view.page().go_to_line(lnum)
+        self.view.page().go_to_sourceline_address(sourceline_address)
 
     def show(self, name):
         if name != self.current_name:
@@ -547,28 +578,46 @@ class Preview(QWidget):
             parse_worker.add_request(self.current_name)
             # Tell webkit to reload all html and associated resources
             current_url = QUrl.fromLocalFile(current_container().name_to_abspath(self.current_name))
+            self.refresh_starting.emit()
             if current_url != self.view.url():
                 # The container was changed
                 self.view.setUrl(current_url)
             else:
                 self.view.refresh()
+            self.refreshed.emit()
 
     def clear(self):
         self.view.clear()
         self.current_name = None
 
     @property
+    def current_root(self):
+        return self.view.page().current_root
+
+    @property
     def is_visible(self):
         return actions['preview-dock'].isChecked()
 
+    @property
+    def live_css_is_visible(self):
+        try:
+            return actions['live-css-dock'].isChecked()
+        except KeyError:
+            return False
+
     def start_refresh_timer(self):
-        if self.is_visible and actions['auto-reload-preview'].isChecked():
+        if self.live_css_is_visible or (self.is_visible and actions['auto-reload-preview'].isChecked()):
             self.refresh_timer.start(tprefs['preview_refresh_time'] * 1000)
 
     def stop_refresh_timer(self):
         self.refresh_timer.stop()
 
     def auto_reload_toggled(self, checked):
+        if self.live_css_is_visible and not actions['auto-reload-preview'].isChecked():
+            actions['auto-reload-preview'].setChecked(True)
+            error_dialog(self, _('Cannot disable'), _(
+                'Auto reloading of the preview panel cannot be disabled while the'
+                ' Live CSS panel is open.'), show=True)
         actions['auto-reload-preview'].setToolTip(_(
             'Auto reload preview when text changes in editor') if not checked else _(
                 'Disable auto reload of preview'))

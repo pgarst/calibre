@@ -116,13 +116,12 @@ class TestICU(unittest.TestCase):
         for group in [
             ('Šaa', 'Smith', 'Solženicyn', 'Štepánek'),
             ('01', '1'),
-            ('1', '11', '13'),
         ]:
             last = None
             for x in group:
                 order, length = icu.numeric_collator().collation_order(x)
                 if last is not None:
-                    self.ae(last, order)
+                    self.ae(last, order, 'Order for %s not correct: %s != %s' % (x, last, order))
                 last = order
 
         self.ae(dict(icu.partition_by_first_letter(['A1', '', 'a1', '\U0001f431', '\U0001f431x'])),
@@ -134,6 +133,8 @@ class TestICU(unittest.TestCase):
             self.ae(r, icu._icu.roundtrip(r))
         for x, l in [('', 0), ('a', 1), ('\U0001f431', 1)]:
             self.ae(icu._icu.string_length(x), l)
+        for x, l in [('', 0), ('a', 1), ('\U0001f431', 2)]:
+            self.ae(icu._icu.utf16_length(x), l)
 
     def test_character_name(self):
         ' Test character naming '
@@ -141,6 +142,7 @@ class TestICU(unittest.TestCase):
 
     def test_contractions(self):
         ' Test contractions '
+        self.skipTest('Skipping as this depends too much on ICU version')
         c = icu._icu.Collator('cs')
         self.ae(icu.contractions(c), frozenset({u'Z\u030c', u'z\u030c', u'Ch',
             u'C\u030c', u'ch', u'cH', u'c\u030c', u's\u030c', u'r\u030c', u'CH',
@@ -148,10 +150,11 @@ class TestICU(unittest.TestCase):
 
     def test_break_iterator(self):
         ' Test the break iterator '
-        from calibre.spell.break_iterator import split_into_words as split, index_of
+        from calibre.spell.break_iterator import split_into_words as split, index_of, split_into_words_and_positions
         for q in ('one two three', ' one two three', 'one\ntwo  three ', 'one-two,three'):
             self.ae(split(unicode(q)), ['one', 'two', 'three'], 'Failed to split: %r' % q)
         self.ae(split(u'I I\'m'), ['I', "I'm"])
+        self.ae(split_into_words_and_positions('one \U0001f431 three'), [(0, 3), (6 if sys.maxunicode >= 0x10ffff else 7, 5)])
         self.ae(0, index_of('i', 'i'))
         self.ae(4, index_of('i', 'six i'))
         self.ae(-1, index_of('i', ''))

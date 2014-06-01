@@ -26,7 +26,12 @@ class Field(object):
         if not raw:
             return
         if self.name is None:
-            self.name, raw = raw.strip().partition(' ')[0::2]
+            # There are cases where partial index entries end with 
+            # a significant space, along the lines of
+            # <>Summary <>  ...  <>Hearing<>.
+            # No known examples of starting with a space yet.
+            # self.name, raw = raw.strip().partition(' ')[0::2]
+            self.name, raw = raw.lstrip().partition(' ')[0::2]
         self.buf.append(raw)
 
     def finalize(self):
@@ -84,6 +89,13 @@ parse_index = parser('index',
     ' f:entry-type g:page-range-separator h:heading k:crossref-separator'
     ' l:page-number-separator p:letter-range s:sequence-name r:run-together y:yomi z:langcode')
 
+parse_ref = parser('ref',
+    'd:separator f:footnote h:hyperlink n:number p:position r:relative-number t:suppress w:number-full-context')
+
+parse_noteref = parser('noteref',
+                   'f:footnote h:hyperlink p:position')
+
+
 class Fields(object):
 
     def __init__(self):
@@ -117,12 +129,15 @@ class Fields(object):
                 if stack:
                     stack[-1].contents.append(elem)
 
-        field_types = ('hyperlink', 'xe', 'index')
+        field_types = ('hyperlink', 'xe', 'index', 'ref', 'noteref')
         parsers = {x.upper():getattr(self, 'parse_'+x) for x in field_types}
+        parsers.update({x:getattr(self, 'parse_'+x) for x in field_types})
         field_parsers = {f.upper():globals()['parse_%s' % f] for f in field_types}
+        field_parsers.update({f:globals()['parse_%s' % f] for f in field_types})
 
         for f in field_types:
             setattr(self, '%s_fields' % f, [])
+        unknown_fields = {'TOC', 'toc', 'PAGEREF', 'pageref'}  # The TOC and PAGEREF fields are handled separately
 
         for field in self.fields:
             field.finalize()
@@ -130,6 +145,25 @@ class Fields(object):
                 func = parsers.get(field.name, None)
                 if func is not None:
                     func(field, field_parsers[field.name], log)
+                elif field.name not in unknown_fields:
+                    log.warn('Encountered unknown field: %s, ignoring it.' % field.name)
+                    unknown_fields.add(field.name)
+
+    def get_runs(self, field):
+        all_runs = []
+        current_runs = []
+        # We only handle spans in a single paragraph
+        # being wrapped in <a>
+        for x in field.contents:
+            if x.tag.endswith('}p'):
+                if current_runs:
+                    all_runs.append(current_runs)
+                current_runs = []
+            elif x.tag.endswith('}r'):
+                current_runs.append(x)
+        if current_runs:
+            all_runs.append(current_runs)
+        return all_runs
 
     def parse_hyperlink(self, field, parse_func, log):
         # Parse hyperlink fields
@@ -137,21 +171,19 @@ class Fields(object):
         if hl:
             if 'target' in hl and hl['target'] is None:
                 hl['target'] = '_blank'
-            all_runs = []
-            current_runs = []
-            # We only handle spans in a single paragraph
-            # being wrapped in <a>
-            for x in field.contents:
-                if x.tag.endswith('}p'):
-                    if current_runs:
-                        all_runs.append(current_runs)
-                    current_runs = []
-                elif x.tag.endswith('}r'):
-                    current_runs.append(x)
-            if current_runs:
-                all_runs.append(current_runs)
-            for runs in all_runs:
+            for runs in self.get_runs(field):
                 self.hyperlink_fields.append((hl, runs))
+
+    def parse_ref(self, field, parse_func, log):
+        ref = parse_func(field.instructions, log)
+        dest = ref.get(None, None)
+        if dest is not None and 'hyperlink' in ref:
+            for runs in self.get_runs(field):
+                self.hyperlink_fields.append(({'anchor':dest}, runs))
+        else:
+            self.log.warn('Unsupported reference field (%s), ignoring: %r' % (field.name, ref))
+
+    parse_noteref = parse_ref
 
     def parse_xe(self, field, parse_func, log):
         # Parse XE fields
@@ -179,6 +211,8 @@ class Fields(object):
             return
         idx = parse_func(field.instructions, log)
         hyperlinks, blocks = process_index(field, idx, self.xe_fields, log)
+        if not blocks:
+            return
         for anchor, run in hyperlinks:
             self.hyperlink_fields.append(({'anchor':anchor}, [run]))
 

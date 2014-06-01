@@ -64,7 +64,7 @@ class KOBO(USBMS):
     gui_name = 'Kobo Reader'
     description = _('Communicate with the Kobo Reader')
     author = 'Timothy Legge and David Forrester'
-    version = (2, 1, 6)
+    version = (2, 1, 7)
 
     dbversion = 0
     fwversion = 0
@@ -1265,7 +1265,7 @@ class KOBOTOUCH(KOBO):
     min_dbversion_activity          = 77
     min_dbversion_keywords          = 82
 
-    max_supported_fwversion         = (3, 3, 1)
+    max_supported_fwversion         = (3, 4, 2)
     min_fwversion_shelves           = (2, 0, 0)
     min_fwversion_images_on_sdcard  = (2, 4, 1)
     min_fwversion_images_tree       = (2, 9, 0)  # Cover images stored in tree under .kobo-images

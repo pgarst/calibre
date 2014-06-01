@@ -181,7 +181,7 @@ def _make_func(template, name, **kwargs):
 
 # }}}
 
-################# The string functions ########################################
+# ################ The string functions ########################################
 sort_key = _make_func(_sort_key_template, 'sort_key', collator='_sort_collator', collator_func='sort_collator')
 
 numeric_sort_key = _make_func(_sort_key_template, 'numeric_sort_key', collator='_numeric_collator', collator_func='numeric_collator')
@@ -279,10 +279,13 @@ def partition_by_first_letter(items, reverse=False, key=lambda x:x):
     return ans
 
 # Return the number of unicode codepoints in a string
+string_length = _icu.string_length if is_narrow_build else len
+
+# Return the number of UTF-16 codepoints in a string
 try:
-    string_length = _icu.string_length if is_narrow_build else len
+    utf16_length = len if is_narrow_build else _icu.utf16_length
 except AttributeError:
-    string_length = len  # Somebody running from source with a binary that has not been updated
+    utf16_length = len  # People running from source
 
 ################################################################################
 

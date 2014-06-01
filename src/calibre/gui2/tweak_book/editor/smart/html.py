@@ -14,7 +14,7 @@ from PyQt4.Qt import QTextEdit
 
 from calibre import prepare_string_for_xml
 from calibre.gui2 import error_dialog
-from calibre.gui2.tweak_book.editor.syntax.html import ATTR_NAME, ATTR_END
+from calibre.gui2.tweak_book.editor.syntax.html import ATTR_NAME, ATTR_END, ATTR_START, ATTR_VALUE
 
 get_offset = itemgetter(0)
 PARAGRAPH_SEPARATOR = '\u2029'
@@ -24,8 +24,8 @@ class Tag(object):
     def __init__(self, start_block, tag_start, end_block, tag_end, self_closing=False):
         self.start_block, self.end_block = start_block, end_block
         self.start_offset, self.end_offset = tag_start.offset, tag_end.offset
-        tag = tag_start.name or tag_start.prefix
-        if tag_start.name and tag_start.prefix:
+        tag = tag_start.name
+        if tag_start.prefix:
             tag = tag_start.prefix + ':' + tag
         self.name = tag
         self.self_closing = self_closing
@@ -101,8 +101,8 @@ def find_tag_definition(block, offset):
         return None, False
     tag_start = boundary
     closing = tag_start.closing
-    tag = tag_start.name or tag_start.prefix
-    if tag_start.name and tag_start.prefix:
+    tag = tag_start.name
+    if tag_start.prefix:
         tag = tag_start.prefix + ':' + tag
     return tag, closing
 
@@ -116,6 +116,28 @@ def find_containing_attribute(block, offset):
     if block is not None and boundary.type == ATTR_NAME:
         return boundary.data
     return None
+
+def find_attribute_in_tag(block, offset, attr_name):
+    end_block, boundary = next_tag_boundary(block, offset)
+    if boundary.is_start:
+        return None, None
+    end_offset = boundary.offset
+    end_pos = (end_block.blockNumber(), end_offset)
+    current_block, current_offset = block, offset
+    found_attr = False
+    while True:
+        current_block, boundary = next_attr_boundary(current_block, current_offset)
+        if current_block is None or (current_block.blockNumber(), boundary.offset) > end_pos:
+            return None, None
+        current_offset = boundary.offset
+        if found_attr:
+            if boundary.type is not ATTR_VALUE or boundary.data is not ATTR_START:
+                return None, None
+            return current_block, current_offset
+        else:
+            if boundary.type is ATTR_NAME and boundary.data.lower() == attr_name.lower():
+                found_attr = True
+            current_offset += 1
 
 def find_closing_tag(tag, max_tags=sys.maxint):
     ''' Find the closing tag corresponding to the specified tag. To find it we
@@ -272,11 +294,14 @@ class HTMLSmarts(NullSmarts):
         editor.setTextCursor(c)
 
     def insert_tag(self, editor, name):
+        name = name.lstrip()
         text = self.get_smart_selection(editor, update=True)
         c = editor.textCursor()
         pos = min(c.position(), c.anchor())
-        c.insertText('<{0}>{1}</{0}>'.format(name, text))
-        c.setPosition(pos + 1 + len(name))
+        m = re.match(r'[a-zA-Z0-9:-]+', name)
+        cname = name if m is None else m.group()
+        c.insertText('<{0}>{1}</{2}>'.format(name, text, cname))
+        c.setPosition(pos + 2 + len(name))
         editor.setTextCursor(c)
 
     def verify_for_spellcheck(self, cursor, highlighter):
@@ -308,4 +333,77 @@ class HTMLSmarts(NullSmarts):
             return True
 
         return False
+
+    def cursor_position_with_sourceline(self, cursor):
+        ''' Return the tag containing the current cursor as a source line
+        number and a list of tags defined on that line upto and including the
+        containing tag. '''
+        block = cursor.block()
+        offset = cursor.position() - block.position()
+        nblock, boundary = next_tag_boundary(block, offset, forward=False)
+        if nblock is None:
+            return None, None
+        if boundary.is_start:
+            # We are inside a tag, use this tag
+            start_block, start_offset = nblock, boundary.offset
+        else:
+            tag = find_closest_containing_tag(block, offset)
+            if tag is None:
+                return None, None
+            start_block, start_offset = tag.start_block, tag.start_offset
+        sourceline = start_block.blockNumber() + 1  # blockNumber() is zero based
+        ud = start_block.userData()
+        if ud is None:
+            return None, None
+        all_tags = [t.name for t in ud.tags if (t.is_start and not t.closing and t.offset <= start_offset)]
+        return sourceline, all_tags
+
+    def goto_sourceline(self, editor, sourceline, tags, attribute=None):
+        ''' Move the cursor to the tag identified by sourceline and tags (a
+        list of tags names on the specified line). If attribute is specified
+        the cursor will be placed at the start of the attribute value. '''
+        block = editor.document().findBlockByNumber(sourceline - 1)  # blockNumber() is zero based
+        found_tag = False
+        if not block.isValid():
+            return found_tag
+        c = editor.textCursor()
+        ud = block.userData()
+        all_tags = [] if ud is None else [t for t in ud.tags if (t.is_start and not t.closing)]
+        tag_names = [t.name for t in all_tags]
+        if tag_names[:len(tags)] == tags:
+            c.setPosition(block.position() + all_tags[len(tags)-1].offset)
+            found_tag = True
+        else:
+            c.setPosition(block.position())
+        if found_tag and attribute is not None:
+            start_offset = c.position() - block.position()
+            nblock, offset = find_attribute_in_tag(block, start_offset, attribute)
+            if nblock is not None:
+                c.setPosition(nblock.position() + offset)
+        editor.setTextCursor(c)
+        return found_tag
+
+    def get_inner_HTML(self, editor):
+        ''' Select the inner HTML of the current tag. Return a cursor with the
+        inner HTML selected or None. '''
+        c = editor.textCursor()
+        block = c.block()
+        offset = c.position() - block.position()
+        nblock, boundary = next_tag_boundary(block, offset)
+        if boundary.is_start:
+            # We are within the contents of a tag already
+            tag = find_closest_containing_tag(block, offset)
+        else:
+            # We are inside a tag definition < | >
+            if boundary.self_closing:
+                return None  # self closing tags have no inner html
+            tag = find_closest_containing_tag(nblock, boundary.offset + 1)
+        if tag is None:
+            return None
+        ctag = find_closing_tag(tag)
+        if ctag is None:
+            return None
+        c.setPosition(tag.end_block.position() + tag.end_offset + 1)
+        c.setPosition(ctag.start_block.position() + ctag.start_offset, c.KeepAnchor)
+        return c
 

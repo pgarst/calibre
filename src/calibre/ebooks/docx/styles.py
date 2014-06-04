@@ -477,19 +477,43 @@ class Styles(object):
             self.classes[h] = (ans, css)
         return ans
 
+    def register_par(self, css, name):
+        ans, _ = self.classes.get(name, (None, None))
+        if ans is None:
+            self.classes[name] = (name, css)
+        return ans
+
+    """
+    To fix list structure we want to look for specific styles, e.g. list
+    continuations, and subsume them in list items.
+    The proper way to do this would probably be earlier in the process, 
+    when we generate the html in the first place, but the easier way
+    is to find the pieces as a cleanup activity and restructure.
+    But, we need to map Word paragraph styles to css classes so that
+    we can find the right parts.
+    Keep a map of word paragraph styles to a list of css styles.
+    """
     def generate_classes(self):
+        self.stylemap = {}
         for bs in self.para_cache.itervalues():
             css = bs.css
             if css:
-                self.register(css, 'block')
+                csstyle = self.register(css, 'block')
+                print('Register ', bs.style_name, '    ', csstyle)
+                stlist = self.stylemap.get(bs.style_name, [])
+                if not csstyle in stlist:
+                    stlist.append(csstyle)
+                    self.stylemap[bs.style_name] =  stlist
+                # self.register_par(css, bs.style_name)
         for bs in self.run_cache.itervalues():
             css = bs.css
             if css:
                 self.register(css, 'text')
 
-    def class_name(self, css):
+    def class_name(self, css, name):
         h = hash(frozenset(css.iteritems()))
-        return self.classes.get(h, (None, None))[0]
+        hcl = self.classes.get(h, (None, None))[0]
+        return hcl
 
     def generate_css(self, dest_dir, docx):
         ef = self.fonts.embed_fonts(dest_dir, docx)

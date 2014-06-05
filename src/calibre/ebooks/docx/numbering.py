@@ -15,6 +15,8 @@ from calibre.ebooks.docx.block_styles import ParagraphStyle
 from calibre.ebooks.docx.char_styles import RunStyle, inherit
 from calibre.ebooks.docx.names import XPath, get
 
+NBSP = '\xa0'
+
 STYLE_MAP = {
     'aiueo': 'hiragana',
     'aiueoFullWidth': 'hiragana',
@@ -160,6 +162,7 @@ class Numbering(object):
         self.counters = defaultdict(Counter)
         self.starts = {}
         self.pic_map = {}
+        self.pattern = re.compile('[\\d]*\\)')
 
     def __call__(self, root, styles, rid_map):
         ' Read all numbering style definitions '
@@ -271,6 +274,17 @@ class Numbering(object):
             if (restart is None and ilvl == levelnum + 1) or restart == levelnum + 1:
                 counter[ilvl] = lvl.start
 
+    # If this node starts with something like 1), change to to a) style.
+    def change_sublist_style(self, child):
+        if child.text == None:
+            return
+        if self.pattern.match(child.text) == None:
+            return
+        fields = child.text.split(')')
+        indch = chr(ord('a') + int(fields[0]) - 1)
+        child.text = '' + indch + ')' + NBSP
+
+    # This is where we get kludged sublists.
     def apply_markup(self, items, body, styles, object_map, images):
         seen_instances = set()
         for p, num_id, ilvl in items:
@@ -364,6 +378,8 @@ class Numbering(object):
 
         # Convert the list items that use custom text for bullets into tables
         # so that they display correctly
+        # PG This changes a) sublists to 1) sublists.
+        # Kludge it back.
         for wrap in body.xpath('//ol[@lvlid]'):
             wrap.attrib.pop('lvlid')
             wrap.tag = 'div'
@@ -379,4 +395,9 @@ class Numbering(object):
                              bs.css.get('margin-left', '0'))
                 bs.css.pop('margin-left', None)
                 for child in li:
+                    # In word the number looks like 1), and the style later changes it
+                    # to a) or i) or whatever.
+                    # We should look in the style to decide what to do, but in this
+                    # document we always want the a) style, so we force it.
+                    self.change_sublist_style(child)
                     child.set('style', 'display:table-cell')

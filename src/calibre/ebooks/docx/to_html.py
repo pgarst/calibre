@@ -183,6 +183,7 @@ class Convert(object):
                 except (TypeError, ValueError):
                     lvl = 0
                 numbered.append((html_obj, num_id, lvl))
+        # This is where it kludges in sublists
         self.numbering.apply_markup(numbered, self.body, self.styles, self.object_map, self.images)
         self.apply_frames()
 

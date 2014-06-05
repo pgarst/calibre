@@ -64,7 +64,8 @@ def join2 (parent, i1, i2):
         list1.append(e)
 
     # Drop second list
-    parent.remove(list2)
+    if list2 in parent:
+        parent.remove(list2)
 
 def join_doc_list(node):
     li = node[0]
@@ -73,9 +74,6 @@ def join_doc_list(node):
         return
     p = node.getparent()
     i2 = p.index(node)
-    # print('Node index ', i2)
-    for n in p:
-        # print('   tag ', n.tag)
     for i1 in range(i2-1,0,-1):
         # print('Try index ', i1)
         prev = p[i1]
@@ -135,6 +133,8 @@ def cleanup_lists (html, styles):
     contlist = styles.stylemap.get('ListNumber...', [])
     contlist.extend(styles.stylemap.get('ListNumber', []))
     contlist.extend(styles.stylemap.get('ListNumber2...', []))
+    contlist.extend(styles.stylemap.get('ListBullet', []))
+    contlist.extend(styles.stylemap.get('>ListBullet...', []))
 
     # First look for joinable lists, then look for trailing units.
     join_doc_lists(html)

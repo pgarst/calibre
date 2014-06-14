@@ -470,6 +470,7 @@ class CSSFlattener(object):
                     match = klass + str(names[klass] or '')
                     styles[css] = match
                     names[klass] += 1
+                print('StyleMap ', classes, ' TO ', match)
                 node.attrib['class'] = match
                 keep_classes.add(match)
 

@@ -40,6 +40,8 @@ RE_NS        = 'http://exslt.org/regular-expressions'
 MBP_NS       = 'http://www.mobipocket.com'
 EPUB_NS      = 'http://www.idpf.org/2007/ops'
 
+EPUB_DT      = '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">'
+
 XPNSMAP      = {'h': XHTML_NS, 'o1': OPF1_NS, 'o2': OPF2_NS,
                 'd09': DC09_NS, 'd10': DC10_NS, 'd11': DC11_NS,
                 'xsi': XSI_NS, 'dt': DCTERMS_NS, 'ncx': NCX_NS,
@@ -331,8 +333,15 @@ def xml2str(root, pretty_print=False, strip_comments=False, with_tail=True):
         for x in root.iterdescendants(etree.Comment):
             if x.text and '--' in x.text:
                 x.text = x.text.replace('--', '__')
+    # PFG use a doctype which makes ibooks and epubcheck shut up
     ans = etree.tostring(root, encoding='utf-8', xml_declaration=True,
-                          pretty_print=pretty_print, with_tail=with_tail)
+                         pretty_print=pretty_print, with_tail=with_tail, doctype=EPUB_DT)
+    # PFG ibooks requires numeric entities
+    # ans = etree.tostring(root, xml_declaration=True,
+    #                       pretty_print=pretty_print, with_tail=with_tail)
+
+    # print('OUPUT: ', pretty_print, with_tail)
+    # print(ans)
 
     if strip_comments:
         ans = re.compile(r'<!--.*?-->', re.DOTALL).sub('', ans)

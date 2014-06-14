@@ -27,8 +27,8 @@ html level, although we have to map the styles there.
 
 The algorithm here does not work in general, but should work for our
 material. We have these significant elements:
-    opening ol node
-    closing ol node
+    opening ol or ul node
+    closing ol or ul node
     li node, no value attribute
     li node with a value attribute
     other list related node - i.e. ListNumber... etc.
@@ -44,11 +44,26 @@ The algorithm is:
     then make it and intervening nodes a child of the last li element.
 """
 
+def list_tag (tag):
+    if tag == 'ol':
+        return tag
+    if tag == 'ul':
+        return tag
+    return None
+
+def dumpelem(msg, html):
+    # print(msg)
+    # raw = etree.tostring(html) # , encoding='utf-8'), doctype='<!DOCTYPE html>')
+    # print(raw)
+    pass
+
 # We have two ol lists to join.
 def join2 (parent, i1, i2):
-    # print('JOIN', i1, '  ', i2)
+    print('JOIN', i1, '  ', i2)
     list1 = parent[i1]
     list2 = parent[i2]
+
+    dumpelem('LIST 1', list1)
 
     # Drop value attribute from first list item in second list.
     liv = list2[0]
@@ -57,16 +72,20 @@ def join2 (parent, i1, i2):
     # Everything between lists becomes a child of last list item
     last = list1[-1]
     for i in range(i1+1, i2):
-        last.append(parent[i])
+        last.append(parent[i1+1])
 
     # Items in second list become children of first list
     for e in list2:
         list1.append(e)
 
+    dumpelem('LIST 2', list1)
+
     # Drop second list
     if list2 in parent:
         parent.remove(list2)
+    dumpelem('Parent', parent)
 
+# Need to adjust this for ul case - then we don't have value node.
 def join_doc_list(node):
     li = node[0]
     val = li.get('value', 0)
@@ -82,8 +101,11 @@ def join_doc_list(node):
             return
 
 def join_doc_lists(html):
-    # print('TRY ', html.tag)
-    if html.tag == 'ol':
+    if html.tag == 'span':
+        return
+
+    print('TRY ', html.tag)
+    if list_tag(html.tag) != None:
         join_doc_list(html)
     else:
         for el in html:
@@ -112,19 +134,29 @@ def join_trailing(html, contlist):
         if cl in contlist:
             for ind in range(base+1, s+1):
                 last.append(p[base+1])
+            raw = etree.tostring(html) # , encoding='utf-8', doctype='<!DOCTYPE html>')
+            print('Appended:')
+            print(raw)
             return True
 
 def join_trailing_items(html, contlist):
-    if html.tag == 'ol':
-        while join_trailing(html, contlist):
-            pass
-    else:
+    print('TRY append ', html.tag)
+    tag = list_tag(html.tag)
+    if tag == None:
         for e in html:
             join_trailing_items(e, contlist)
+    else:
+        while join_trailing(html, contlist):
+            pass
 
 def cleanup_lists (html, styles):
     # import pydevd;pydevd.settrace()
-    # raw = etree.tostring(html, encoding='utf-8', doctype='<!DOCTYPE html>')
+    print('CLEANUP:')
+    # raw = etree.tostring(html) # , encoding='utf-8', doctype='<!DOCTYPE html>')
+    # print(raw)
+    # raw = etree.tostring(html, xml_declaration=True) # , encoding='utf-8', doctype='<!DOCTYPE html>')
+    # print(raw)
+    # raw = etree.tostring(html, xml_declaration=True, pretty_print=True) # , encoding='utf-8', doctype='<!DOCTYPE html>')
     # print(raw)
 
     # Find list related blocks.

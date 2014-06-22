@@ -40,6 +40,11 @@ import sys;sys.path.append(r'/home/peterg/tools/eclipse/plugins/org.python.pydev
 NBSP = '\xa0'
 NBSPT = '&#160;'
 
+def dumpnode (msg, nd):
+    t1 = etree.tostring(nd)
+    print(msg)
+    print(t1)
+
 class Text:
 
     def __init__(self, elem, attr, buf):
@@ -617,8 +622,11 @@ class Convert(object):
                     # kindle, etc?  Only want to replace initial spaces, although 
                     # that results in us losing internal spaces sometimes.
                     sptext = self.initsp(child.text)
+                    dumpnode('BEFORE', ans)
                     text.add_elem(SPAN(sptext, style="white-space:pre-wrap"))
+                    dumpnode('ELEM', text.elem)
                     ans.append(text.elem)
+                    dumpnode('ANSWER', ans)
                 else:
                     text.buf.append(child.text)
             elif is_tag(child, 'w:cr'):

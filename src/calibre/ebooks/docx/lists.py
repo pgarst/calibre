@@ -59,7 +59,6 @@ def dumpelem(msg, html):
 
 # We have two ol lists to join.
 def join2 (parent, i1, i2):
-    print('JOIN', i1, '  ', i2)
     list1 = parent[i1]
     list2 = parent[i2]
 
@@ -101,10 +100,7 @@ def join_doc_list(node):
             return
 
 def join_doc_lists(html):
-    if html.tag == 'span':
-        return
 
-    print('TRY ', html.tag)
     if list_tag(html.tag) != None:
         join_doc_list(html)
     else:
@@ -118,11 +114,14 @@ def join_doc_lists(html):
 # are followed by other list continuations.
 # To simplify indexing, just make one addition, if possible,
 # and then return true.
-def join_trailing(html, contlist):
+def join_trailing(html, contlist, immedlist):
     p = html.getparent()
     base = p.index(html)
     s = base
     last = html[-1]
+    # print('START append ', last.get('class', 'X'))
+    # raw = etree.tostring(last) # , encoding='utf-8', doctype='<!DOCTYPE html>')
+    # print(raw)
     while True:
         s = s + 1
         if s >= len(p):
@@ -130,23 +129,27 @@ def join_trailing(html, contlist):
         nd = p[s]
         if nd.tag == 'ol':
             return False
+        if nd.tag == 'ul':
+            return False
         cl = nd.get('class', '')
+        if cl in immedlist and (s == (base+1)):
+            last.append(p[base+1])
+            return True
         if cl in contlist:
             for ind in range(base+1, s+1):
                 last.append(p[base+1])
-            raw = etree.tostring(html) # , encoding='utf-8', doctype='<!DOCTYPE html>')
-            print('Appended:')
-            print(raw)
             return True
 
-def join_trailing_items(html, contlist):
-    print('TRY append ', html.tag)
+def join_trailing_items(html, contlist, immedlist, depth):
+    # If this node contains a list, we may merge following elements into it,
+    # thus messing up the iteration over the list.
+    # To handle this we iterate backwards, by index.
     tag = list_tag(html.tag)
     if tag == None:
-        for e in html:
-            join_trailing_items(e, contlist)
+        for i in xrange(len(html) - 1, -1, -1):
+            join_trailing_items(html[i], contlist, immedlist, depth+1)
     else:
-        while join_trailing(html, contlist):
+        while join_trailing(html, contlist, immedlist):
             pass
 
 def cleanup_lists (html, styles):
@@ -168,8 +171,11 @@ def cleanup_lists (html, styles):
     contlist.extend(styles.stylemap.get('ListBullet', []))
     contlist.extend(styles.stylemap.get('>ListBullet...', []))
 
+    # Some styles we want to append if they come immediately after
+    immedlist = styles.stylemap.get('Code', [])
+
     # First look for joinable lists, then look for trailing units.
     join_doc_lists(html)
-    join_trailing_items(html, contlist)
+    join_trailing_items(html, contlist, immedlist, 0)
 
     return

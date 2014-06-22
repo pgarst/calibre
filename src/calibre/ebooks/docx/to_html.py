@@ -583,11 +583,12 @@ class Convert(object):
                 else:
                     a.set('href', dest)
 
-    # Replace only initial spaces with NBSP to make formatted code work
+    # PG Replace only initial spaces with NBSP to make formatted code work.
+    # Require more than one space to avoid messing up other situations.
     def initsp (self, str):
         trimstr = str.lstrip()
         nsp = len(str) - len(trimstr)
-        if nsp == 0:
+        if nsp < 2:
             return str
         retstr = [NBSP]*nsp
         return "".join(retstr) + trimstr

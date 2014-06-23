@@ -622,11 +622,8 @@ class Convert(object):
                     # kindle, etc?  Only want to replace initial spaces, although 
                     # that results in us losing internal spaces sometimes.
                     sptext = self.initsp(child.text)
-                    dumpnode('BEFORE', ans)
                     text.add_elem(SPAN(sptext, style="white-space:pre-wrap"))
-                    dumpnode('ELEM', text.elem)
                     ans.append(text.elem)
-                    dumpnode('ANSWER', ans)
                 else:
                     text.buf.append(child.text)
             elif is_tag(child, 'w:cr'):

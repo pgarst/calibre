@@ -13,6 +13,8 @@ from lxml import etree
 from calibre.ebooks.docx.names import XPath, expand
 from calibre.utils.icu import partition_by_first_letter, sort_key
 
+import sys;sys.path.append(r'/home/peterg/tools/eclipse/plugins/org.python.pydev_3.3.3.201401272249/pysrc')
+
 def get_applicable_xe_fields(index, xe_fields):
     iet = index.get('entry-type', None)
     xe_fields = [xe for xe in xe_fields if xe.get('entry-type', None) == iet]
@@ -119,10 +121,20 @@ def process_index(field, index, xe_fields, log):
 
     return hyperlinks, blocks
 
+def dumpnode (msg, nd):
+    t1 = etree.tostring(nd)
+    print(msg)
+    print(t1)
+
 def split_up_block(block, a, text, parts, ldict):
     prefix = parts[:-1]
+
+    # Also drop span contained here
+    if len(a) > 0:
+        a.remove(a[0])
     a.text = parts[-1]
     parent = a.getparent()
+
     style = 'display:block; margin-left: %.3gem'
     for i, prefix in enumerate(prefix):
         m = 1.5 * i
@@ -225,6 +237,7 @@ def merge_blocks(prev_block, next_block, pind, nind, next_path, ldict):
 
 def polish_index_markup(index, blocks):
     # Blocks are in reverse order at this point
+    # import pydevd;pydevd.settrace()
     path_map = {}
     ldict = {}
     for block in blocks:
